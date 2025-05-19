@@ -4,6 +4,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 interface Payment {
   timestamp: Date;
   amount: number;
+  mode?: string;
+  paymentMode?: string;
   type: string;
 }
 
@@ -23,65 +25,60 @@ const PaymentCalendar: React.FC<PaymentCalendarProps> = ({
     date: Date;
     isCurrentMonth: boolean;
     hasPayments: boolean;
-    paymentCount: number;
-    totalAmount: number;
+    cashAmount: number;
+    gpayAmount: number;
   }>>([]);
 
-  // Generate calendar days for the current month view
   useEffect(() => {
     const generateCalendarDays = () => {
       const year = currentMonth.getFullYear();
       const month = currentMonth.getMonth();
       
-      // First day of the month
       const firstDay = new Date(year, month, 1);
-      // Last day of the month
       const lastDay = new Date(year, month + 1, 0);
-      
-      // Day of the week for the first day (0 = Sunday, 1 = Monday, etc.)
       const firstDayOfWeek = firstDay.getDay();
       
-      // Generate array of days to display in the calendar
       const days = [];
       
-      // Add days from previous month to fill the first week
+      // Previous month days
       const prevMonthLastDay = new Date(year, month, 0).getDate();
       for (let i = firstDayOfWeek - 1; i >= 0; i--) {
         const date = new Date(year, month - 1, prevMonthLastDay - i);
+        const { cash, gpay } = getPaymentBreakdownForDate(date);
         days.push({
           date,
           isCurrentMonth: false,
-          hasPayments: hasPaymentsOnDate(date),
-          paymentCount: getPaymentCountForDate(date),
-          totalAmount: getTotalAmountForDate(date)
+          hasPayments: cash > 0 || gpay > 0,
+          cashAmount: cash,
+          gpayAmount: gpay
         });
       }
       
-      // Add days from current month
+      // Current month days
       for (let day = 1; day <= lastDay.getDate(); day++) {
         const date = new Date(year, month, day);
+        const { cash, gpay } = getPaymentBreakdownForDate(date);
         days.push({
           date,
           isCurrentMonth: true,
-          hasPayments: hasPaymentsOnDate(date),
-          paymentCount: getPaymentCountForDate(date),
-          totalAmount: getTotalAmountForDate(date)
+          hasPayments: cash > 0 || gpay > 0,
+          cashAmount: cash,
+          gpayAmount: gpay
         });
       }
       
-      // Fill remaining days of the last week with days from next month
-      const remainingDays = 7 - (days.length % 7);
-      if (remainingDays < 7) {
-        for (let day = 1; day <= remainingDays; day++) {
-          const date = new Date(year, month + 1, day);
-          days.push({
-            date,
-            isCurrentMonth: false,
-            hasPayments: hasPaymentsOnDate(date),
-            paymentCount: getPaymentCountForDate(date),
-            totalAmount: getTotalAmountForDate(date)
-          });
-        }
+      // Next month days
+      const remainingDays = 42 - days.length; // Always show 6 weeks
+      for (let day = 1; day <= remainingDays; day++) {
+        const date = new Date(year, month + 1, day);
+        const { cash, gpay } = getPaymentBreakdownForDate(date);
+        days.push({
+          date,
+          isCurrentMonth: false,
+          hasPayments: cash > 0 || gpay > 0,
+          cashAmount: cash,
+          gpayAmount: gpay
+        });
       }
       
       setCalendarDays(days);
@@ -90,39 +87,11 @@ const PaymentCalendar: React.FC<PaymentCalendarProps> = ({
     generateCalendarDays();
   }, [currentMonth, payments]);
 
-  const hasPaymentsOnDate = (date: Date) => {
-    // Check if there are any payments on this date
-    return payments.some(payment => {
-      const paymentDate = payment.timestamp instanceof Date ? 
-        payment.timestamp : 
-        new Date(payment.timestamp);
-        
-      return (
-        paymentDate.getDate() === date.getDate() &&
-        paymentDate.getMonth() === date.getMonth() &&
-        paymentDate.getFullYear() === date.getFullYear()
-      );
-    });
-  };
+  const getPaymentBreakdownForDate = (date: Date) => {
+    let cash = 0;
+    let gpay = 0;
 
-  const getPaymentCountForDate = (date: Date) => {
-    // Count payments on this date
-    return payments.filter(payment => {
-      const paymentDate = payment.timestamp instanceof Date ? 
-        payment.timestamp : 
-        new Date(payment.timestamp);
-        
-      return (
-        paymentDate.getDate() === date.getDate() &&
-        paymentDate.getMonth() === date.getMonth() &&
-        paymentDate.getFullYear() === date.getFullYear()
-      );
-    }).length;
-  };
-
-  const getTotalAmountForDate = (date: Date) => {
-    // Sum payment amounts on this date
-    return payments.reduce((total, payment) => {
+    payments.forEach(payment => {
       const paymentDate = payment.timestamp instanceof Date ? 
         payment.timestamp : 
         new Date(payment.timestamp);
@@ -132,18 +101,24 @@ const PaymentCalendar: React.FC<PaymentCalendarProps> = ({
         paymentDate.getMonth() === date.getMonth() &&
         paymentDate.getFullYear() === date.getFullYear()
       ) {
-        return total + (parseFloat(payment.amount) || 0);
+        const amount = parseFloat(payment.amount.toString()) || 0;
+        if (payment.mode === 'cash' || payment.paymentMode === 'cash') {
+          cash += amount;
+        } else if (payment.mode === 'gpay' || payment.paymentMode === 'gpay') {
+          gpay += amount;
+        }
       }
-      return total;
-    }, 0);
+    });
+
+    return { cash, gpay };
   };
 
   const goToPreviousMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1));
   };
 
   const goToNextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1));
   };
 
   const goToToday = () => {
@@ -153,7 +128,6 @@ const PaymentCalendar: React.FC<PaymentCalendarProps> = ({
 
   const isSelectedDate = (date: Date) => {
     if (!selectedDate) return false;
-    
     return (
       date.getDate() === selectedDate.getDate() &&
       date.getMonth() === selectedDate.getMonth() &&
@@ -171,7 +145,7 @@ const PaymentCalendar: React.FC<PaymentCalendarProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-lg overflow-hidden">
+    <div className="bg-white rounded-lg shadow-md overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <h2 className="text-lg font-semibold text-gray-800">
           {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
@@ -179,21 +153,19 @@ const PaymentCalendar: React.FC<PaymentCalendarProps> = ({
         <div className="flex space-x-2">
           <button
             onClick={goToPreviousMonth}
-            className="p-1 rounded-full hover:bg-gray-100 transition-colors duration-200"
-            aria-label="Previous month"
+            className="p-1 rounded-full hover:bg-gray-100"
           >
             <ChevronLeft className="h-5 w-5 text-gray-600" />
           </button>
           <button
             onClick={goToToday}
-            className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-colors duration-200"
+            className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200"
           >
             Today
           </button>
           <button
             onClick={goToNextMonth}
-            className="p-1 rounded-full hover:bg-gray-100 transition-colors duration-200"
-            aria-label="Next month"
+            className="p-1 rounded-full hover:bg-gray-100"
           >
             <ChevronRight className="h-5 w-5 text-gray-600" />
           </button>
@@ -213,44 +185,53 @@ const PaymentCalendar: React.FC<PaymentCalendarProps> = ({
         {calendarDays.map((day, index) => (
           <button
             key={index}
+            onClick={() => onSelectDate(day.date)}
             className={`
-              relative h-24 sm:h-28 p-1 bg-white hover:bg-gray-50 focus:z-10 focus:outline-none
+              relative h-28 p-1 bg-white hover:bg-gray-50 focus:z-10 focus:outline-none
               ${!day.isCurrentMonth ? 'text-gray-400' : 'text-gray-900'}
               ${isSelectedDate(day.date) ? 'ring-2 ring-offset-2 ring-blue-500' : ''}
               ${isToday(day.date) && !isSelectedDate(day.date) ? 'border border-blue-500' : ''}
             `}
-            onClick={() => onSelectDate(day.date)}
           >
             <time
               dateTime={day.date.toISOString().split('T')[0]}
               className={`
-                ml-1 flex h-6 w-6 items-center justify-center rounded-full 
-                ${
-                  isSelectedDate(day.date)
-                    ? 'bg-blue-600 font-semibold text-white'
-                    : isToday(day.date)
-                      ? 'bg-blue-100 text-blue-700 font-semibold'
-                      : 'text-gray-900'
-                }
+                ml-1 flex h-6 w-6 items-center justify-center rounded-full
+                ${isSelectedDate(day.date)
+                  ? 'bg-blue-600 font-semibold text-white'
+                  : isToday(day.date)
+                    ? 'bg-blue-100 text-blue-700 font-semibold'
+                    : 'text-gray-900'}
               `}
             >
               {day.date.getDate()}
             </time>
             
             {day.hasPayments && (
-              <div className="mt-1">
-                <div className={`
-                  w-full text-xs px-1 py-0.5 rounded-sm font-medium
-                  ${day.isCurrentMonth ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'}
-                `}>
-                  {day.paymentCount} {day.paymentCount === 1 ? 'payment' : 'payments'}
-                </div>
+              <div className="mt-1 space-y-1 text-left">
+                {day.cashAmount > 0 && (
+                  <div className={`
+                    text-xs px-1.5 py-0.5 rounded
+                    ${day.isCurrentMonth ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}
+                  `}>
+                    ₹{day.cashAmount.toFixed(0)} cash
+                  </div>
+                )}
+                
+                {day.gpayAmount > 0 && (
+                  <div className={`
+                    text-xs px-1.5 py-0.5 rounded
+                    ${day.isCurrentMonth ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'}
+                  `}>
+                    ₹{day.gpayAmount.toFixed(0)} gpay
+                  </div>
+                )}
                 
                 <div className={`
-                  mt-1 w-full text-xs px-1 py-0.5 rounded-sm font-medium
-                  ${day.isCurrentMonth ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}
+                  text-xs px-1.5 py-0.5 rounded font-medium
+                  ${day.isCurrentMonth ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-600'}
                 `}>
-                  ₹{day.totalAmount.toFixed(0)}
+                  ₹{(day.cashAmount + day.gpayAmount).toFixed(0)} total
                 </div>
               </div>
             )}
