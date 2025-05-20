@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { collection, addDoc, Timestamp, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import { toast } from 'react-toastify';
 
 const CheckIn: React.FC = () => {
   const { roomId } = useParams();
@@ -49,7 +50,7 @@ const CheckIn: React.FC = () => {
       !formData.rent ||
       !formData.initialPayment
     ) {
-      alert('Please fill in all required fields.');
+      toast.error('Please fill in all required fields.');
       return;
     }
 
@@ -72,11 +73,12 @@ const CheckIn: React.FC = () => {
         description: 'Initial payment at check-in'
       });
 
-      alert('Check-in completed successfully!');
-      navigate('/rooms');
+      toast.success('Check-in completed successfully!');
+      // Navigate to the room matrix page instead of /roommatrix
+      navigate('/rooms/matrix');
     } catch (error) {
       console.error('Error during check-in:', error);
-      alert('Check-in failed. Please try again.');
+      toast.error('Check-in failed. Please try again.');
     }
   };
 
@@ -85,7 +87,6 @@ const CheckIn: React.FC = () => {
       <h1 className="text-2xl font-bold mb-6">Check In - Room {roomNumber}</h1>
       <div className="bg-white rounded-lg shadow p-6">
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Rest of the form fields remain the same */}
           {/* Guest Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -231,7 +232,7 @@ const CheckIn: React.FC = () => {
           <div className="flex justify-end space-x-4 pt-4">
             <button
               type="button"
-              onClick={() => navigate('/rooms')}
+              onClick={() => navigate('/rooms/matrix')}
               className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium bg-white hover:bg-gray-50"
             >
               Cancel
