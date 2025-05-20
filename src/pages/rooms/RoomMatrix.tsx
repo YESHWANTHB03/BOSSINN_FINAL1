@@ -333,29 +333,51 @@ const RoomMatrix = () => {
     try {
       const amount = parseFloat(extensionAmount);
       
+      // Get the check-in time
+      const checkinTime = currentBooking.checkedInAt?.toDate ? 
+        currentBooking.checkedInAt.toDate() : 
+        currentBooking.checkedInAt;
+      
+      // Get the last extension time if available
+      const lastExtensionTime = currentBooking.lastExtensionAt?.toDate ? 
+        currentBooking.lastExtensionAt.toDate() : 
+        currentBooking.lastExtensionAt;
+      
+      // Calculate next day from check-in with same time
+      let nextExtensionDate;
+      
+      if (lastExtensionTime) {
+        // If there was a previous extension, use that as the reference
+        // Add one day to the last extension date
+        nextExtensionDate = new Date(lastExtensionTime);
+        nextExtensionDate.setDate(nextExtensionDate.getDate() + 1);
+      } else {
+        // If this is the first extension, use check-in as reference
+        // Add one day to the check-in date
+        nextExtensionDate = new Date(checkinTime);
+        nextExtensionDate.setDate(nextExtensionDate.getDate() + 1);
+      }
+      
+      // Create a Timestamp for the extension date
+      const extensionTimestamp = Timestamp.fromDate(nextExtensionDate);
+      
+      // Add payment entry with the calculated extension timestamp
       const paymentRef = collection(db, 'checkins', currentBooking.id, 'payments');
       await addDoc(paymentRef, {
         amount,
         mode: 'n/a',
         type: 'extension',
-        timestamp: Timestamp.now(),
+        timestamp: extensionTimestamp,
         description: 'Room extension payment'
       });
 
-      // Calculate the new extension time based on the last extension or check-in time
-      const now = new Date();
-      const checkinTime = currentBooking.checkedInAt?.toDate?.() || currentBooking.checkedInAt;
-      const lastExtensionTime = currentBooking.lastExtensionAt?.toDate?.() || currentBooking.lastExtensionAt;
-      const referenceTime = lastExtensionTime || checkinTime;
-      
-      // Add 24 hours to the reference time
-      const newExtensionTime = new Date(referenceTime.getTime() + (24 * 60 * 60 * 1000));
-
+      // Update the booking with the new extension time
       await updateDoc(doc(db, 'checkins', currentBooking.id), {
         rent: increment(amount),
-        lastExtensionAt: Timestamp.fromDate(newExtensionTime),
+        lastExtensionAt: extensionTimestamp,
       });
 
+      // Update room status
       await updateDoc(doc(db, 'rooms', currentRoom.id), {
         status: 'occupied',
       });
