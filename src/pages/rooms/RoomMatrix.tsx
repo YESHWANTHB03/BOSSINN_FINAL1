@@ -224,17 +224,17 @@ const RoomMatrix = () => {
         ...doc.data() 
       })) as PaymentEntry[];
 
+      // Initial rent entry (original check-in)
+      const initialRent = booking.rent - getExtensionPaymentsTotal(history);
       const rentEntry: PaymentEntry = {
         id: 'rent-entry',
-        amount: booking.rent,
+        amount: initialRent, // Only include the initial rent, not extensions
         mode: 'n/a',
         type: 'Rent (Check-in)',
         timestamp: booking.checkedInAt || Timestamp.now(),
       };
 
       const shopPurchases = await ShopPurchaseService.getPurchasesByCheckin(bookingId);
-      const totalShopAmount = shopPurchases.reduce((total, purchase) => total + purchase.amount, 0);
-
       setShopPurchases(shopPurchases as ShopPurchase[]);
 
       const initialPayment = history.find(p => p.type === 'initial');
@@ -248,6 +248,7 @@ const RoomMatrix = () => {
         description: 'Initial payment at check-in'
       };
 
+      // Include rent entry, advance entry, and all history except duplicated initial payment
       const fullHistory = [rentEntry, advanceEntry, ...history.filter(p => p.type !== 'initial')];
       setPaymentHistory(fullHistory);
     } catch (error) {
@@ -256,7 +257,16 @@ const RoomMatrix = () => {
     }
   };
 
+  // Helper function to calculate extension payments total
+  const getExtensionPaymentsTotal = (paymentEntries: PaymentEntry[]) => {
+    return paymentEntries
+      .filter(entry => entry.type === 'extension')
+      .reduce((total, payment) => total + payment.amount, 0);
+  };
+
   const getTotalRentSoFar = (booking: Booking) => {
+    // Filter out extension-related entries to avoid double counting
+    // Since we already separated initial rent and extension payments
     const rentPayments = paymentHistory.filter(entry => 
       entry.type === 'Rent (Check-in)' || entry.type === 'extension' || entry.type === 'shop-purchase'
     );
