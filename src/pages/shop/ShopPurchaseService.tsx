@@ -5,13 +5,11 @@ import {
   getDocs, 
   query, 
   where, 
-  updateDoc, 
   doc, 
   increment, 
   Timestamp,
-  runTransaction
+  writeBatch
 } from 'firebase/firestore';
-import { toast } from 'react-toastify';
 
 type CartItem = {
   inventoryId: string;
@@ -32,56 +30,49 @@ export const ShopPurchaseService = {
         0
       );
 
-      await runTransaction(db, async (transaction) => {
-        // Update inventory quantities
-        for (const item of cartItems) {
-          const inventoryRef = doc(db, 'inventory', item.inventoryId);
-          const inventoryDoc = await transaction.get(inventoryRef);
-          
-          if (!inventoryDoc.exists()) {
-            throw new Error(`Inventory item ${item.inventoryId} not found`);
-          }
-          
-          const currentQuantity = inventoryDoc.data().quantity;
-          if (currentQuantity < item.quantity) {
-            throw new Error(`Insufficient quantity for ${item.itemName}`);
-          }
-          
-          transaction.update(inventoryRef, {
-            quantity: increment(-item.quantity)
-          });
-        }
+      const batch = writeBatch(db);
 
-        // Create purchase records
-        const purchasePromises = cartItems.map(item => 
-          addDoc(collection(db, 'purchases'), {
-            checkinId,
-            inventoryId: item.inventoryId,
-            itemName: item.itemName,
-            quantity: item.quantity,
-            amount: item.quantity * item.unitPrice,
-            paymentStatus: 'pending',
-            createdAt: Timestamp.now()
-          })
-        );
-        
-        await Promise.all(purchasePromises);
-        
-        // Update the checkin's pending amount
-        const checkinRef = doc(db, 'checkins', checkinId);
-        transaction.update(checkinRef, {
-          initialPayment: increment(-totalAmount)
+      // Update inventory quantities
+      for (const item of cartItems) {
+        const inventoryRef = doc(db, 'inventory', item.inventoryId);
+        batch.update(inventoryRef, {
+          quantity: increment(-item.quantity)
         });
-        
-        // Add a payment entry for the shop purchase
-        await addDoc(collection(db, 'checkins', checkinId, 'payments'), {
-          amount: -totalAmount,
-          mode: 'shop',
-          type: 'shop-purchase',
-          timestamp: Timestamp.now(),
-          description: `Shop purchase (${cartItems.length} items)`
+      }
+
+      // Create purchase records
+      const purchasesCollection = collection(db, 'purchases');
+      cartItems.forEach(item => {
+        const purchaseRef = doc(purchasesCollection);
+        batch.set(purchaseRef, {
+          checkinId,
+          inventoryId: item.inventoryId,
+          itemName: item.itemName,
+          quantity: item.quantity,
+          amount: item.quantity * item.unitPrice,
+          paymentStatus: 'pending',
+          createdAt: Timestamp.now()
         });
       });
+
+      // Update the checkin's pending amount
+      const checkinRef = doc(db, 'checkins', checkinId);
+      batch.update(checkinRef, {
+        initialPayment: increment(-totalAmount)
+      });
+
+      // Add a payment entry for the shop purchase
+      const paymentRef = doc(collection(db, 'checkins', checkinId, 'payments'));
+      batch.set(paymentRef, {
+        amount: -totalAmount,
+        mode: 'shop',
+        type: 'shop-purchase',
+        timestamp: Timestamp.now(),
+        description: `Shop purchase (${cartItems.length} items)`
+      });
+
+      // Commit all changes
+      await batch.commit();
 
       return { success: true, message: 'Purchase processed successfully' };
     } catch (error) {
